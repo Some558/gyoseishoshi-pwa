@@ -450,7 +450,9 @@
       // base64部分だけ取り出す
       const parts = dataUrl.split(',');
       selectedImageBase64 = parts[1];
-      selectedMimeType = file.type || 'image/jpeg';
+      const rawType = file.type || 'image/jpeg';
+      const supported = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      selectedMimeType = supported.includes(rawType) ? rawType : 'image/jpeg';
 
       // プレビュー表示
       const img = document.getElementById('preview-img');
