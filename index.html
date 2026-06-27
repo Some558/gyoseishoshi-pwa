@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="行書AI解説">
   <link rel="manifest" href="manifest.json">
-  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+  <script src="heic2any.min.js"></script>
   <title>行政書士AI解説</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -61,39 +61,88 @@
       margin-bottom: 16px;
     }
 
-    #preview-container {
+    .capture-hint {
+      font-size: 13px;
+      color: #64748b;
+      text-align: center;
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+
+    .image-slots {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .image-slot {
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
+      padding: 12px;
+      transition: border-color 0.2s;
+    }
+
+    .image-slot.filled {
+      border-style: solid;
+      border-color: #93c5fd;
+      background: #f8fafc;
+    }
+
+    .image-slot-label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 8px;
+    }
+
+    .preview-container {
       position: relative;
       width: 100%;
-      border-radius: 10px;
+      border-radius: 8px;
       overflow: hidden;
       background: #e2e8f0;
-      min-height: 200px;
+      min-height: 140px;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 14px;
+      margin-bottom: 10px;
     }
 
-    #preview-img {
+    .preview-img {
       width: 100%;
       display: none;
-      border-radius: 10px;
+      border-radius: 8px;
     }
 
-    #preview-placeholder {
+    .preview-placeholder {
       text-align: center;
       color: #94a3b8;
-      padding: 40px 20px;
+      padding: 28px 16px;
     }
 
-    #preview-placeholder .icon { font-size: 48px; margin-bottom: 8px; }
-    #preview-placeholder p { font-size: 14px; }
+    .preview-placeholder .icon { font-size: 32px; margin-bottom: 6px; }
+    .preview-placeholder p { font-size: 13px; }
 
-    #btn-row {
+    .slot-btn-row {
       display: flex;
-      gap: 10px;
+      gap: 8px;
     }
 
+    .slot-btn-row .btn {
+      padding: 10px 8px;
+      font-size: 13px;
+    }
+
+    .slot-btn-row .btn:first-child {
+      background: #2563eb;
+      color: white;
+    }
+
+    .slot-btn-row .btn:last-child {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
     .btn {
       flex: 1;
       padding: 14px 10px;
@@ -109,16 +158,6 @@
       gap: 6px;
     }
     .btn:active { opacity: 0.8; transform: scale(0.98); }
-
-    #btn-camera {
-      background: #2563eb;
-      color: white;
-    }
-
-    #btn-gallery {
-      background: #e0e7ff;
-      color: #3730a3;
-    }
 
     #analyze-btn {
       width: 100%;
@@ -326,8 +365,7 @@
     }
 
     /* 隠しinput */
-    #file-input { display: none; }
-    #camera-input { display: none; }
+    .hidden-input { display: none; }
   </style>
 </head>
 <body>
@@ -339,21 +377,38 @@
 
 <main>
   <div id="capture-area">
-    <div id="preview-container">
-      <div id="preview-placeholder">
-        <div class="icon">📷</div>
-        <p>問題集のページを撮影してください</p>
-      </div>
-      <img id="preview-img" alt="選択した画像">
-    </div>
+    <p class="capture-hint">問題文と正解・解説を、それぞれ撮影またはアルバムから選択してください</p>
 
-    <div id="btn-row">
-      <button class="btn" id="btn-camera" onclick="openCamera()">
-        📷 カメラで撮る
-      </button>
-      <button class="btn" id="btn-gallery" onclick="openGallery()">
-        🖼️ アルバムから
-      </button>
+    <div class="image-slots">
+      <div class="image-slot" id="slot-problem">
+        <div class="image-slot-label">① 問題文</div>
+        <div class="preview-container">
+          <div class="preview-placeholder" id="placeholder-problem">
+            <div class="icon">📝</div>
+            <p>問題のページ</p>
+          </div>
+          <img class="preview-img" id="preview-problem" alt="問題文">
+        </div>
+        <div class="slot-btn-row">
+          <button class="btn" id="btn-camera-problem" onclick="openCamera('problem')">📷 撮る</button>
+          <button class="btn" id="btn-gallery-problem" onclick="openGallery('problem')">🖼️ アルバム</button>
+        </div>
+      </div>
+
+      <div class="image-slot" id="slot-answer">
+        <div class="image-slot-label">② 正解・解説</div>
+        <div class="preview-container">
+          <div class="preview-placeholder" id="placeholder-answer">
+            <div class="icon">✅</div>
+            <p>解答・解説のページ</p>
+          </div>
+          <img class="preview-img" id="preview-answer" alt="正解・解説">
+        </div>
+        <div class="slot-btn-row">
+          <button class="btn" id="btn-camera-answer" onclick="openCamera('answer')">📷 撮る</button>
+          <button class="btn" id="btn-gallery-answer" onclick="openGallery('answer')">🖼️ アルバム</button>
+        </div>
+      </div>
     </div>
 
     <button id="analyze-btn" onclick="analyze()">
@@ -377,8 +432,10 @@
 </main>
 
 <!-- 隠しファイル入力 -->
-<input type="file" id="camera-input" accept="image/*" capture="environment" onchange="handleFile(event)">
-<input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
+<input type="file" class="hidden-input" id="camera-input-problem" accept="image/*" capture="environment" data-slot="problem" onchange="handleFile(event)">
+<input type="file" class="hidden-input" id="file-input-problem" accept="image/*,.heic,.heif" data-slot="problem" onchange="handleFile(event)">
+<input type="file" class="hidden-input" id="camera-input-answer" accept="image/*" capture="environment" data-slot="answer" onchange="handleFile(event)">
+<input type="file" class="hidden-input" id="file-input-answer" accept="image/*,.heic,.heif" data-slot="answer" onchange="handleFile(event)">
 
 <!-- APIキー設定モーダル -->
 <div id="modal-overlay">
@@ -396,10 +453,10 @@
 </div>
 
 <script>
-  const PROMPT = `この写真は行政書士試験の問題集のページです。
-左側に問題、右側に正解と解説が記載されています。
+  const PROMPT = `1枚目の写真は行政書士試験の「問題文」です。
+2枚目の写真は「正解と解説」が記載された解答ページです。
 
-以下の構成で、初学者にも分かりやすく解説してください。
+両方の写真を読み取り、以下の構成で初学者にも分かりやすく解説してください。
 
 ## 問題の要点
 何を問われているか、どの法律・条文のテーマかを1〜2文で説明してください。
@@ -418,8 +475,8 @@
 
 法律用語は必ず噛み砕いた言葉で補足してください。`;
 
-  let selectedImageBase64 = null;
-  let selectedMimeType = null;
+  const images = { problem: null, answer: null };
+  const loadGeneration = { problem: 0, answer: 0 };
   let resultText = '';
 
   // 初回起動チェック
@@ -433,12 +490,29 @@
     }
   });
 
-  function openCamera() {
-    document.getElementById('camera-input').click();
+  function openCamera(slot) {
+    if (!['problem', 'answer'].includes(slot)) return;
+    document.getElementById(`camera-input-${slot}`).click();
   }
 
-  function openGallery() {
-    document.getElementById('file-input').click();
+  function openGallery(slot) {
+    if (!['problem', 'answer'].includes(slot)) return;
+    document.getElementById(`file-input-${slot}`).click();
+  }
+
+  function updateAnalyzeBtn() {
+    const ready = images.problem && images.answer;
+    document.getElementById('analyze-btn').style.display = ready ? 'block' : 'none';
+  }
+
+  function updateSlotPreview(slot, jpegDataUrl) {
+    const img = document.getElementById(`preview-${slot}`);
+    img.src = jpegDataUrl;
+    img.style.display = 'block';
+    document.getElementById(`placeholder-${slot}`).style.display = 'none';
+    document.getElementById(`slot-${slot}`).classList.add('filled');
+    document.getElementById('result').style.display = 'none';
+    updateAnalyzeBtn();
   }
 
   function toJpegDataUrl(dataUrl) {
@@ -461,52 +535,53 @@
     });
   }
 
-  function handleFile(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    event.target.value = '';
-
+  async function fileToJpegDataUrl(file) {
     const isHeic = file.type === 'image/heic'
       || file.type === 'image/heif'
       || file.name.toLowerCase().endsWith('.heic')
       || file.name.toLowerCase().endsWith('.heif');
 
-    const processBlob = async (blob) => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          try {
-            const jpegDataUrl = await toJpegDataUrl(e.target.result);
-            resolve(jpegDataUrl);
-          } catch (err) {
-            reject(err);
-          }
-        };
-        reader.onerror = () => reject(new Error('読み込みエラー'));
-        reader.readAsDataURL(blob);
-      });
-    };
+    let blob = file;
+    if (isHeic) {
+      if (typeof heic2any !== 'function') {
+        throw new Error('HEIC変換ライブラリを読み込めませんでした');
+      }
+      blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.88 });
+      if (Array.isArray(blob)) blob = blob[0];
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          resolve(await toJpegDataUrl(e.target.result));
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('読み込みエラー'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function handleFile(event) {
+    const file = event.target.files[0];
+    const slot = event.target.dataset.slot;
+    if (!file || !slot || !['problem', 'answer'].includes(slot)) return;
+    event.target.value = '';
+
+    images[slot] = null;
+    updateAnalyzeBtn();
+    const generation = ++loadGeneration[slot];
 
     (async () => {
       try {
-        let blob = file;
-        if (isHeic) {
-          blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.88 });
-          // heic2any が配列を返す場合がある
-          if (Array.isArray(blob)) blob = blob[0];
-        }
-
-        const jpegDataUrl = await processBlob(blob);
-        selectedImageBase64 = jpegDataUrl.split(',')[1];
-        selectedMimeType = 'image/jpeg';
-
-        const img = document.getElementById('preview-img');
-        img.src = jpegDataUrl;
-        img.style.display = 'block';
-        document.getElementById('preview-placeholder').style.display = 'none';
-        document.getElementById('analyze-btn').style.display = 'block';
-        document.getElementById('result').style.display = 'none';
+        const jpegDataUrl = await fileToJpegDataUrl(file);
+        if (loadGeneration[slot] !== generation) return;
+        images[slot] = jpegDataUrl.split(',')[1];
+        updateSlotPreview(slot, jpegDataUrl);
       } catch (err) {
+        if (loadGeneration[slot] !== generation) return;
         alert('画像の読み込みに失敗しました。別の写真を試してください。\n' + err.message);
       }
     })();
@@ -515,7 +590,39 @@
   async function analyze() {
     const apiKey = localStorage.getItem('anthropic_api_key');
     if (!apiKey) { showModal(); return; }
-    if (!selectedImageBase64) return;
+    if (!images.problem || !images.answer) return;
+
+    const requestBody = {
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 2048,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: images.problem
+                }
+              },
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: 'image/jpeg',
+                  data: images.answer
+                }
+              },
+              { type: 'text', text: PROMPT }
+            ]
+          }]
+        };
+
+    if (new Blob([JSON.stringify(requestBody)]).size > 12 * 1024 * 1024) {
+      alert('画像サイズが大きすぎます。別の写真を選ぶか、もう一度撮影してください。');
+      return;
+    }
 
     const analyzeBtn = document.getElementById('analyze-btn');
     analyzeBtn.disabled = true;
@@ -534,29 +641,17 @@
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true'
         },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 2048,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: selectedMimeType,
-                  data: selectedImageBase64
-                }
-              },
-              { type: 'text', text: PROMPT }
-            ]
-          }]
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error?.message || `API エラー (${response.status})`);
+        const raw = await response.text();
+        let message = `API エラー (${response.status})`;
+        try {
+          const err = JSON.parse(raw);
+          message = err.error?.message || message;
+        } catch (_) {}
+        throw new Error(message);
       }
 
       const data = await response.json();
@@ -575,11 +670,22 @@
     }
   }
 
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function renderResult(markdown) {
     document.getElementById('loading').style.display = 'none';
 
+    const safe = escapeHtml(markdown);
+
     // Markdownを簡易HTMLに変換
-    let html = markdown
+    let html = safe
       // H2
       .replace(/^## (.+)$/gm, '<h2>$1</h2>')
       // 太字
@@ -613,14 +719,19 @@
   }
 
   function reset() {
-    selectedImageBase64 = null;
-    selectedMimeType = null;
+    images.problem = null;
+    images.answer = null;
+    loadGeneration.problem = 0;
+    loadGeneration.answer = 0;
     resultText = '';
 
-    const img = document.getElementById('preview-img');
-    img.style.display = 'none';
-    img.src = '';
-    document.getElementById('preview-placeholder').style.display = 'block';
+    ['problem', 'answer'].forEach((slot) => {
+      const img = document.getElementById(`preview-${slot}`);
+      img.style.display = 'none';
+      img.src = '';
+      document.getElementById(`placeholder-${slot}`).style.display = 'block';
+      document.getElementById(`slot-${slot}`).classList.remove('filled');
+    });
 
     const analyzeBtn = document.getElementById('analyze-btn');
     analyzeBtn.style.display = 'none';
@@ -637,14 +748,14 @@
       const btn = document.getElementById('copy-btn');
       btn.textContent = 'コピーしました！';
       setTimeout(() => btn.textContent = 'コピー', 2000);
-    });
+    }).catch(() => alert('コピーできませんでした'));
   }
 
   // === APIキー設定 ===
   function showModal() {
     const overlay = document.getElementById('modal-overlay');
     overlay.classList.add('active');
-    const saved = localStorage.getItem('gemini_api_key');
+    const saved = localStorage.getItem('anthropic_api_key');
     if (saved) document.getElementById('api-key-input').value = saved;
   }
 
