@@ -245,6 +245,13 @@
     }
     #result-body h2:first-child { margin-top: 0; }
 
+    #result-body h3 {
+      font-size: 15px;
+      color: #1e40af;
+      margin: 14px 0 6px;
+      font-weight: 700;
+    }
+
     #result-body p { margin-bottom: 8px; color: #374151; }
 
     #result-body ul {
@@ -720,6 +727,8 @@
 
     // Markdownを簡易HTMLに変換
     let html = safe
+      // H3（H2より先に変換すること）
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
       // H2
       .replace(/^## (.+)$/gm, '<h2>$1</h2>')
       // 太字
