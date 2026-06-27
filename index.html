@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="行書AI解説">
   <link rel="manifest" href="manifest.json">
+  <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
   <title>行政書士AI解説</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -377,7 +378,7 @@
 
 <!-- 隠しファイル入力 -->
 <input type="file" id="camera-input" accept="image/*" capture="environment" onchange="handleFile(event)">
-<input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" onchange="handleFile(event)">
+<input type="file" id="file-input" accept="image/*" onchange="handleFile(event)">
 
 <!-- APIキー設定モーダル -->
 <div id="modal-overlay">
@@ -465,10 +466,37 @@
     if (!file) return;
     event.target.value = '';
 
-    const reader = new FileReader();
-    reader.onload = async (e) => {
+    const isHeic = file.type === 'image/heic'
+      || file.type === 'image/heif'
+      || file.name.toLowerCase().endsWith('.heic')
+      || file.name.toLowerCase().endsWith('.heif');
+
+    const processBlob = async (blob) => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const jpegDataUrl = await toJpegDataUrl(e.target.result);
+            resolve(jpegDataUrl);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(new Error('読み込みエラー'));
+        reader.readAsDataURL(blob);
+      });
+    };
+
+    (async () => {
       try {
-        const jpegDataUrl = await toJpegDataUrl(e.target.result);
+        let blob = file;
+        if (isHeic) {
+          blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.88 });
+          // heic2any が配列を返す場合がある
+          if (Array.isArray(blob)) blob = blob[0];
+        }
+
+        const jpegDataUrl = await processBlob(blob);
         selectedImageBase64 = jpegDataUrl.split(',')[1];
         selectedMimeType = 'image/jpeg';
 
@@ -479,10 +507,9 @@
         document.getElementById('analyze-btn').style.display = 'block';
         document.getElementById('result').style.display = 'none';
       } catch (err) {
-        alert('この形式の画像は読み込めませんでした。\nカメラで撮影するか、JPEGの写真を選んでください。');
+        alert('画像の読み込みに失敗しました。別の写真を試してください。\n' + err.message);
       }
-    };
-    reader.readAsDataURL(file);
+    })();
   }
 
   async function analyze() {
