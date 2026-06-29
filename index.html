@@ -587,27 +587,71 @@
 </div>
 
 <script>
-  const PROMPT = `1枚目の写真は行政書士試験の「問題文」です。
-2枚目の写真は「正解と解説」が記載された解答ページです。
+  // ── 2段階分離 ──────────────────────────────────────────────
+  // 段階1: 読み取り専用。解説は一切させず、構造化(JSON)で正確に抽出する。
+  //        設問の「問い方(極性)」を原文引用させることで ○/× の取り違えを防ぐ。
+  const READ_PROMPT = `1枚目は行政書士試験の「問題文」、2枚目は「正解と解説」が書かれた解答ページです。
+この段階のあなたの仕事は「正確な読み取り」だけです。解説は一切書かないでください。
 
-【最優先のチェック】
-まず2枚目（解答ページ）が鮮明に読み取れるか確認してください。
-正解の選択肢や解説の文字が、ブレ・見切れ・ピンボケ・暗さなどで正確に読み取れない場合は、
-無理に解説せず、次の一文だけを返してください：
+次の手順で読み取ってください:
+1. まず2枚目（解答ページ）が鮮明に読めるか確認する。正解や解説の文字がブレ・見切れ・ピンボケ・暗さで読めない場合は readable を false にする。
+2. 1枚目の設問文の「問い方」を必ず原文のまま polarity_quote に引用し、それを根拠に polarity を判定する。「妥当でないものはどれか」「誤っているものはどれか」のような否定形に特に注意すること。
+3. 各選択肢を label(ア/イ/ウ や 1/2/3 等)と text に分けて、写真に書かれている通りに書き起こす。
+4. 2枚目の解答ページに書かれている正解を correct_answer に、解説があれば answer_explanation にそのまま書き起こす。記憶で補わない。
+すべての文字は写真の通り正確に。推測で補完しないこと。`;
 
-## 判定不可
-解答ページを正確に読み取れませんでした。明るい場所で、ページ全体がはっきり写るように撮り直してください。
+  // 段階1の出力スキーマ(structured output)。極性と正解を独立フィールドで強制抽出する。
+  const READ_SCHEMA = {
+    type: 'object',
+    properties: {
+      readable: { type: 'boolean', description: '2枚目(解答ページ)が正確に読み取れるか' },
+      question_text: { type: 'string', description: '問題文の本文' },
+      polarity: {
+        type: 'string',
+        enum: ['正しいものを選べ', '誤っているものを選べ', '個数を答える', '組み合わせを選べ', 'その他'],
+        description: '設問が何を要求しているか'
+      },
+      polarity_quote: { type: 'string', description: '極性の根拠になった設問の原文の一節' },
+      choices: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { label: { type: 'string' }, text: { type: 'string' } },
+          required: ['label', 'text'],
+          additionalProperties: false
+        }
+      },
+      correct_answer: { type: 'string', description: '解答ページから読み取った正解' },
+      answer_explanation: { type: 'string', description: '解答ページに書かれている解説(なければ空文字)' },
+      theme: { type: 'string', description: '関係する法律・条文のテーマ' }
+    },
+    required: ['readable', 'question_text', 'polarity', 'polarity_quote', 'choices', 'correct_answer', 'answer_explanation', 'theme'],
+    additionalProperties: false
+  };
 
-読み取れる場合のみ、以下の構成で初学者にも分かりやすく解説してください。
+  // 段階2: 解説生成専用。画像は渡さず、段階1の確定テキストだけを使う。
+  const buildExplainPrompt = (q) => `以下は行政書士試験の問題を正確に読み取った結果です。これを使って初学者向けに解説してください。
+
+設問: ${q.question_text}
+問い方: ${q.polarity}（根拠の原文: 「${q.polarity_quote}」）
+選択肢:
+${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
+解答ページに記載の正解: ${q.correct_answer}
+解答ページの解説: ${q.answer_explanation || '(記載なし)'}
+テーマ: ${q.theme}
+
+【最重要】「問い方」を必ず正しく適用すること。例えば問い方が「誤っているものを選べ」なら、記述が誤っている選択肢が正解になる。上で読み取った正解(${q.correct_answer})と矛盾する説明は絶対に書かないこと。
+
+以下の構成で、初学者にも分かりやすく解説してください。
 
 ## 問題の要点
 何を問われているか、どの法律・条文のテーマかを1〜2文で説明してください。
 
 ## 正解と理由
-正解の選択肢を明示し、なぜ正解なのかを丁寧に解説してください。
+正解の選択肢を明示し、なぜ正解なのかを丁寧に解説してください。問い方（${q.polarity}）をどう適用したかにも触れてください。
 
 ## 誤りの選択肢の解説
-各誤り選択肢について「なぜ誤りか」を具体的に説明してください。
+正解以外の各選択肢について「なぜそうなるか」を具体的に説明してください。
 
 ## 具体例で理解する
 実際の場面（日常生活や仕事など）に置き換えて、直感的に理解できる具体例を挙げてください。
@@ -616,12 +660,7 @@
 この問題のポイントを試験本番で思い出せるような、シンプルな覚え方・語呂合わせ・ルール化を提案してください。
 
 法律用語は必ず噛み砕いた言葉で補足してください。
-
----
-【正確さのための重要ルール】
-- 2枚目の解答ページに書かれている正解・解説を最優先の事実とし、それと矛盾する推測は書かないこと。
-- 条文番号や判例名は、写真に明記されている場合のみ引用すること。記憶で補わない。曖昧な場合は「条文番号は問題集をご確認ください」と書く。
-- 解説は丁寧かつ正確に。不確かな情報を断定口調で書かないこと。`;
+条文番号や判例名は、読み取った内容に明記されている場合のみ引用し、記憶で補わないこと。曖昧な場合は「条文番号は問題集をご確認ください」と書いてください。`;
 
   const HISTORY_KEY = 'gyoseishoshi_history';
   const MAX_HISTORY = 50;
@@ -844,41 +883,58 @@
     })();
   }
 
+  // Claude Messages API を叩く共通ヘルパー
+  async function callClaude(apiKey, body) {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const raw = await response.text();
+      let message = `API エラー (${response.status})`;
+      try {
+        const err = JSON.parse(raw);
+        message = err.error?.message || message;
+      } catch (_) {}
+      throw new Error(message);
+    }
+
+    const data = await response.json();
+    const text = data.content?.find(b => b.type === 'text')?.text;
+    if (!text) throw new Error('応答を取得できませんでした');
+    return text;
+  }
+
   async function analyze() {
     const apiKey = localStorage.getItem('anthropic_api_key');
     if (!apiKey) { showModal(); return; }
     if (!images.problem || !images.answer) return;
 
-    const requestBody = {
-          model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 2048,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: '【1枚目: 問題文のページ】' },
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: images.problem
-                }
-              },
-              { type: 'text', text: '【2枚目: 正解と解説が書かれた解答ページ】' },
-              {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: images.answer
-                }
-              },
-              { type: 'text', text: PROMPT }
-            ]
-          }]
-        };
+    // ── 段階1: 読み取り専用(画像あり・構造化出力) ──
+    const readBody = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 3000,
+      output_config: { format: { type: 'json_schema', schema: READ_SCHEMA } },
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: '【1枚目: 問題文のページ】' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: images.problem } },
+          { type: 'text', text: '【2枚目: 正解と解説が書かれた解答ページ】' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: images.answer } },
+          { type: 'text', text: READ_PROMPT }
+        ]
+      }]
+    };
 
-    if (new Blob([JSON.stringify(requestBody)]).size > 12 * 1024 * 1024) {
+    if (new Blob([JSON.stringify(readBody)]).size > 12 * 1024 * 1024) {
       alert('画像サイズが大きすぎます。別の写真を選ぶか、もう一度撮影してください。');
       return;
     }
@@ -892,30 +948,34 @@
     document.getElementById('result').style.display = 'none';
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        const raw = await response.text();
-        let message = `API エラー (${response.status})`;
-        try {
-          const err = JSON.parse(raw);
-          message = err.error?.message || message;
-        } catch (_) {}
-        throw new Error(message);
+      // 段階1を実行 → JSON抽出結果を得る
+      const readText = await callClaude(apiKey, readBody);
+      let q;
+      try {
+        q = JSON.parse(readText);
+      } catch (_) {
+        throw new Error('問題の読み取り結果を解釈できませんでした。撮り直して再度お試しください。');
       }
 
-      const data = await response.json();
-      const text = data.content?.[0]?.text;
-      if (!text) throw new Error('解説を取得できませんでした');
+      // 解答ページが読み取れなかった場合は、解説に進まず撮り直しを案内
+      if (!q.readable) {
+        const ng = '## 判定不可\n解答ページを正確に読み取れませんでした。明るい場所で、ページ全体がはっきり写るように撮り直してください。';
+        resultText = ng;
+        saveToHistory(ng);
+        document.getElementById('history-from-badge').style.display = 'none';
+        renderResult(ng);
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = '🔍 AIで解説してもらう';
+        return;
+      }
+
+      // ── 段階2: 解説生成専用(画像なし・段階1の確定テキストのみ) ──
+      const explainBody = {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: buildExplainPrompt(q) }]
+      };
+      const text = await callClaude(apiKey, explainBody);
 
       resultText = text;
       saveToHistory(text);
