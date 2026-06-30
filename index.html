@@ -486,6 +486,100 @@
       margin-left: 8px;
       font-weight: 500;
     }
+
+    /* === テキスト選択ポップアップ === */
+    #selection-popup {
+      display: none;
+      position: fixed;
+      z-index: 200;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+      padding: 12px 14px;
+      width: 280px;
+      max-width: calc(100vw - 32px);
+    }
+
+    #selection-popup.active { display: block; }
+
+    #selection-popup-label {
+      font-size: 12px;
+      color: #2563eb;
+      font-weight: 600;
+      margin-bottom: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #selection-popup-input-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #selection-question {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      line-height: 1.5;
+    }
+    #selection-question:focus { border-color: #2563eb; }
+
+    #selection-send-btn {
+      padding: 8px 12px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      align-self: flex-end;
+    }
+    #selection-send-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+
+    /* === インラインQ&Aブロック === */
+    .inline-qa {
+      background: #f0f9ff;
+      border: 1.5px solid #bae6fd;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 10px 0;
+      font-size: 14px;
+    }
+
+    .inline-qa-context {
+      font-size: 12px;
+      color: #0369a1;
+      font-weight: 600;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #bae6fd;
+      padding-bottom: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .inline-qa-question {
+      color: #1e40af;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .inline-qa-answer {
+      color: #374151;
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+
+    .inline-qa-answer.loading { color: #94a3b8; }
   </style>
 </head>
 <body>
@@ -595,9 +689,10 @@
 
 次の手順で読み取ってください:
 1. まず2枚目（解答ページ）が鮮明に読めるか確認する。正解や解説の文字がブレ・見切れ・ピンボケ・暗さで読めない場合は readable を false にする。
-2. 1枚目の設問文の「問い方」を必ず原文のまま polarity_quote に引用し、それを根拠に polarity を判定する。「妥当でないものはどれか」「誤っているものはどれか」のような否定形に特に注意すること。
-3. 各選択肢を label(ア/イ/ウ や 1/2/3 等)と text に分けて、写真に書かれている通りに書き起こす。
-4. 2枚目の解答ページに書かれている正解を correct_answer に、解説があれば answer_explanation にそのまま書き起こす。記憶で補わない。
+2. 1枚目の問題ページに記載されている問題番号（例: "9-10-3"、"問10"、"第3問" 等）を question_number に書き起こす。明記がなければ空文字にする。
+3. 1枚目の設問文の「問い方」を必ず原文のまま polarity_quote に引用し、それを根拠に polarity を判定する。「妥当でないものはどれか」「誤っているものはどれか」のような否定形に特に注意すること。
+4. 各選択肢を label(ア/イ/ウ や 1/2/3 等)と text に分けて、写真に書かれている通りに書き起こす。
+5. 2枚目の解答ページに書かれている正解を correct_answer に、解説があれば answer_explanation にそのまま書き起こす。記憶で補わない。
 すべての文字は写真の通り正確に。推測で補完しないこと。`;
 
   // 段階1の出力スキーマ(structured output)。極性と正解を独立フィールドで強制抽出する。
@@ -605,6 +700,10 @@
     type: 'object',
     properties: {
       readable: { type: 'boolean', description: '2枚目(解答ページ)が正確に読み取れるか' },
+      question_number: {
+        type: 'string',
+        description: '問題番号（問題ページに記載の番号。例: "9-10-3"、"問10"、"第3問"など。明記されていない場合は空文字）'
+      },
       question_text: { type: 'string', description: '問題文の本文' },
       polarity: {
         type: 'string',
@@ -625,7 +724,7 @@
       answer_explanation: { type: 'string', description: '解答ページに書かれている解説(なければ空文字)' },
       theme: { type: 'string', description: '関係する法律・条文のテーマ' }
     },
-    required: ['readable', 'question_text', 'polarity', 'polarity_quote', 'choices', 'correct_answer', 'answer_explanation', 'theme'],
+    required: ['readable', 'question_number', 'question_text', 'polarity', 'polarity_quote', 'choices', 'correct_answer', 'answer_explanation', 'theme'],
     additionalProperties: false
   };
 
@@ -668,6 +767,9 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
   const images = { problem: null, answer: null };
   const loadGeneration = { problem: 0, answer: 0 };
   let resultText = '';
+  let currentHistoryId = '';
+  let currentQa = [];
+  let pendingSelection = null; // { text: string, anchorElement: Element }
 
   // 初回起動チェック
   window.addEventListener('load', () => {
@@ -677,6 +779,9 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
+    document.getElementById('selection-question').addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendInlineQuestion();
+    });
   });
 
   function loadHistory() {
@@ -703,16 +808,21 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
   }
 
-  function saveToHistory(text) {
+  function saveToHistory(text, q) {
     const history = loadHistory();
+    const id = Date.now().toString();
     history.unshift({
-      id: Date.now().toString(),
+      id,
       createdAt: new Date().toISOString(),
+      questionNumber: q?.question_number || '',
+      questionFirstLine: (q?.question_text || '').split('\n').find(l => l.trim()) || '',
       title: extractHistoryTitle(text),
       text,
+      qa: [],
     });
     if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    return id;
   }
 
   function showHistory() {
@@ -721,15 +831,27 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     if (history.length === 0) {
       list.innerHTML = '<div class="history-empty">まだ履歴がありません</div>';
     } else {
-      list.innerHTML = history.map((item) => `
-        <div class="history-item" onclick="openHistoryItem('${item.id}')">
-          <div class="history-item-body">
-            <div class="history-item-title">${escapeHtml(item.title)}</div>
-            <div class="history-item-date">${formatHistoryDate(item.createdAt)}</div>
+      list.innerHTML = history.map((item) => {
+        const hasQa = item.qa && item.qa.length > 0;
+        const numLabel = item.questionNumber
+          ? `<span style="font-weight:700;color:#2563eb;margin-right:4px;">${escapeHtml(item.questionNumber)}</span>`
+          : '';
+        const mainText = item.questionFirstLine
+          ? escapeHtml(item.questionFirstLine.slice(0, 40))
+          : escapeHtml(item.title);
+        return `
+          <div class="history-item" onclick="openHistoryItem('${item.id}')">
+            <div class="history-item-body">
+              <div class="history-item-title">${numLabel}${mainText}</div>
+              <div class="history-item-date">
+                ${formatHistoryDate(item.createdAt)}
+                ${hasQa ? `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px;">❓${item.qa.length}件の質問</span>` : ''}
+              </div>
+            </div>
+            <button class="history-item-delete" onclick="deleteHistoryItem(event, '${item.id}')" title="削除">×</button>
           </div>
-          <button class="history-item-delete" onclick="deleteHistoryItem(event, '${item.id}')" title="削除">×</button>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
     document.getElementById('history-overlay').classList.add('active');
   }
@@ -743,10 +865,13 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     if (!item) return;
     closeHistory();
     resultText = item.text;
+    currentHistoryId = item.id;
+    currentQa = item.qa || [];
     document.getElementById('capture-area').style.display = 'none';
     document.getElementById('loading').style.display = 'none';
     document.getElementById('history-from-badge').style.display = 'inline';
     renderResult(item.text);
+    restoreInlineQa(currentQa);
   }
 
   function deleteHistoryItem(event, id) {
@@ -961,7 +1086,8 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
       if (!q.readable) {
         const ng = '## 判定不可\n解答ページを正確に読み取れませんでした。明るい場所で、ページ全体がはっきり写るように撮り直してください。';
         resultText = ng;
-        saveToHistory(ng);
+        currentQa = [];
+        currentHistoryId = saveToHistory(ng, q);
         document.getElementById('history-from-badge').style.display = 'none';
         renderResult(ng);
         analyzeBtn.disabled = false;
@@ -978,7 +1104,8 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
       const text = await callClaude(apiKey, explainBody);
 
       resultText = text;
-      saveToHistory(text);
+      currentQa = [];
+      currentHistoryId = saveToHistory(text, q);
       document.getElementById('history-from-badge').style.display = 'none';
       renderResult(text);
 
@@ -1065,6 +1192,11 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     document.getElementById('result').style.display = 'none';
     document.getElementById('history-from-badge').style.display = 'none';
     document.getElementById('capture-area').scrollIntoView({ behavior: 'smooth' });
+
+    currentHistoryId = '';
+    currentQa = [];
+    pendingSelection = null;
+    hideSelectionPopup();
   }
 
   function copyResult() {
@@ -1108,6 +1240,246 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
       document.getElementById('modal-overlay').classList.remove('active');
     }
   });
+
+  // ── テキスト選択 → インライン質問 ──────────────────────────
+  function normalizeForMatch(text) {
+    return (text || '').replace(/\s+/g, '').trim();
+  }
+
+  function getResultBodyBlocks() {
+    const resultBody = document.getElementById('result-body');
+    if (!resultBody) return [];
+    return [...resultBody.children].filter(el => !el.classList.contains('inline-qa'));
+  }
+
+  function getAnchorBlockIndex(anchorElement) {
+    return getResultBodyBlocks().indexOf(anchorElement);
+  }
+
+  function resolveAnchorForQa(qa) {
+    const blocks = getResultBodyBlocks();
+    if (typeof qa.anchorIndex === 'number' && blocks[qa.anchorIndex]) {
+      return blocks[qa.anchorIndex];
+    }
+    return findAnchorForSelectedText(qa.selectedText);
+  }
+
+  function findAnchorForSelectedText(selectedText) {
+    const resultBody = document.getElementById('result-body');
+    if (!resultBody || !selectedText) return null;
+
+    const needle = normalizeForMatch(selectedText);
+    if (!needle) return null;
+
+    const blocks = getResultBodyBlocks();
+    let partialMatch = null;
+
+    for (const block of blocks) {
+      const blockText = normalizeForMatch(block.textContent);
+      if (blockText.includes(needle)) return block;
+      if (!partialMatch && needle.length >= 8 && blockText.includes(needle.slice(0, 8))) {
+        partialMatch = block;
+      }
+    }
+    return partialMatch;
+  }
+
+  function getQaInsertPoint(anchorElement) {
+    let el = anchorElement;
+    while (el.nextElementSibling?.classList.contains('inline-qa')) {
+      el = el.nextElementSibling;
+    }
+    return el;
+  }
+
+  function buildInlineQaElement({ selectedText, question, answer, loading = false }) {
+    const qaBlock = document.createElement('div');
+    qaBlock.className = 'inline-qa';
+    const preview = selectedText.length > 40 ? selectedText.slice(0, 40) + '…' : selectedText;
+    qaBlock.innerHTML = `
+      <div class="inline-qa-context">「${escapeHtml(preview)}」</div>
+      <div class="inline-qa-question">Q: ${escapeHtml(question)}</div>
+      <div class="inline-qa-answer${loading ? ' loading' : ''}">${loading ? '回答を生成中…' : escapeHtml(answer)}</div>
+    `;
+    if (!loading) {
+      qaBlock.querySelector('.inline-qa-answer').textContent = answer;
+    }
+    return qaBlock;
+  }
+
+  function restoreInlineQa(qaList) {
+    if (!qaList?.length) return;
+
+    for (const qa of qaList) {
+      const anchor = resolveAnchorForQa(qa);
+      if (!anchor) continue;
+      const qaBlock = buildInlineQaElement({
+        selectedText: qa.selectedText,
+        question: qa.question,
+        answer: qa.answer,
+      });
+      getQaInsertPoint(anchor).insertAdjacentElement('afterend', qaBlock);
+    }
+  }
+
+  function getBlockAncestor(node) {
+    const BLOCK_TAGS = ['P', 'H2', 'H3', 'H4', 'DIV', 'LI', 'UL', 'OL', 'BLOCKQUOTE'];
+    let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    const resultBody = document.getElementById('result-body');
+    while (el && el !== resultBody) {
+      if (BLOCK_TAGS.includes(el.tagName) && el.parentElement === resultBody) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function handleTextSelection() {
+    const selection = window.getSelection();
+    const selectedText = selection && selection.toString().trim();
+    if (!selectedText || !selection.rangeCount) {
+      hideSelectionPopup();
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const resultBody = document.getElementById('result-body');
+    if (!resultBody || !resultBody.contains(range.commonAncestorContainer)) {
+      hideSelectionPopup();
+      return;
+    }
+
+    const anchorElement = getBlockAncestor(range.commonAncestorContainer);
+    if (!anchorElement) { hideSelectionPopup(); return; }
+
+    pendingSelection = { text: selectedText, anchorElement };
+
+    const rect = range.getBoundingClientRect();
+    showSelectionPopup(rect, selectedText);
+  }
+
+  function showSelectionPopup(rect, selectedText) {
+    const popup = document.getElementById('selection-popup');
+    const label = document.getElementById('selection-popup-label');
+    const preview = selectedText.length > 22 ? selectedText.slice(0, 22) + '…' : selectedText;
+    label.textContent = '💬 "' + preview + '" について質問';
+
+    const popupWidth = 280;
+    const margin = 8;
+    let left = rect.left;
+    if (left + popupWidth > window.innerWidth - margin) {
+      left = window.innerWidth - popupWidth - margin;
+    }
+    if (left < margin) left = margin;
+
+    popup.style.left = left + 'px';
+    popup.classList.add('active');
+
+    const popupHeight = popup.offsetHeight || 120;
+    let top = rect.bottom + margin;
+    if (top + popupHeight > window.innerHeight - margin) {
+      top = rect.top - popupHeight - margin;
+    }
+    if (top < margin) top = margin;
+
+    popup.style.top = top + 'px';
+    document.getElementById('selection-question').value = '';
+  }
+
+  function hideSelectionPopup() {
+    document.getElementById('selection-popup').classList.remove('active');
+    pendingSelection = null;
+  }
+
+  document.addEventListener('mouseup', (e) => {
+    const popup = document.getElementById('selection-popup');
+    if (popup && popup.contains(e.target)) return;
+    setTimeout(handleTextSelection, 10);
+  });
+
+  document.addEventListener('touchend', (e) => {
+    const popup = document.getElementById('selection-popup');
+    if (popup && popup.contains(e.target)) return;
+    setTimeout(handleTextSelection, 100);
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    const popup = document.getElementById('selection-popup');
+    const resultBody = document.getElementById('result-body');
+    if (!popup?.classList.contains('active')) return;
+    if (popup.contains(e.target)) return;
+    if (resultBody?.contains(e.target)) return;
+    hideSelectionPopup();
+  });
+
+  async function sendInlineQuestion() {
+    if (!pendingSelection) return;
+    const apiKey = localStorage.getItem('anthropic_api_key');
+    if (!apiKey) { showModal(); return; }
+
+    const { text: selectedText, anchorElement } = pendingSelection;
+    const question = document.getElementById('selection-question').value.trim();
+    const displayQuestion = question || 'この部分についてもっと詳しく教えてください。';
+
+    hideSelectionPopup();
+    window.getSelection()?.removeAllRanges();
+
+    const qaBlock = buildInlineQaElement({
+      selectedText,
+      question: displayQuestion,
+      answer: '',
+      loading: true,
+    });
+    getQaInsertPoint(anchorElement).insertAdjacentElement('afterend', qaBlock);
+    qaBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const historyId = currentHistoryId;
+    const anchorIndex = getAnchorBlockIndex(anchorElement);
+    const contextText = resultText;
+
+    try {
+      const body = {
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        messages: [{
+          role: 'user',
+          content: `以下は行政書士試験の問題についてのAI解説です。\n\n---\n${contextText}\n---\n\n解説の中の次の部分について質問があります:\n「${selectedText}」\n\n質問: ${displayQuestion}\n\n初学者にわかりやすく、具体的に簡潔に答えてください。`
+        }]
+      };
+      const answer = await callClaude(apiKey, body);
+      const answerEl = qaBlock.querySelector('.inline-qa-answer');
+      if (answerEl) {
+        answerEl.classList.remove('loading');
+        answerEl.textContent = answer;
+      }
+
+      const qaEntry = { selectedText, question: displayQuestion, answer, anchorIndex };
+      const history = loadHistory();
+      const item = history.find(h => h.id === historyId);
+      if (item) {
+        item.qa = [...(item.qa || []), qaEntry];
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+        if (currentHistoryId === historyId) {
+          currentQa = item.qa;
+        }
+      }
+    } catch (e) {
+      const answerEl = qaBlock.querySelector('.inline-qa-answer');
+      if (answerEl) answerEl.textContent = 'エラー: ' + e.message;
+    }
+  }
 </script>
+
+<!-- テキスト選択ポップアップ -->
+<div id="selection-popup">
+  <div id="selection-popup-label"></div>
+  <div id="selection-popup-input-row">
+    <textarea
+      id="selection-question"
+      placeholder="質問を入力（省略すると「詳しく教えて」として送ります）"
+      rows="2"
+    ></textarea>
+    <button id="selection-send-btn" onclick="sendInlineQuestion()">質問する</button>
+  </div>
+</div>
 </body>
 </html>
