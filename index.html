@@ -1032,6 +1032,9 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     }
 
     const data = await response.json();
+    if (data.stop_reason === 'max_tokens') {
+      throw new Error('AIの応答がトークン上限に達しました。もう一度お試しください。');
+    }
     const text = data.content?.find(b => b.type === 'text')?.text;
     if (!text) throw new Error('応答を取得できませんでした');
     return text;
@@ -1098,7 +1101,7 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
       // ── 段階2: 解説生成専用(画像なし・段階1の確定テキストのみ) ──
       const explainBody = {
         model: 'claude-sonnet-4-6',
-        max_tokens: 2048,
+        max_tokens: 4096,
         messages: [{ role: 'user', content: buildExplainPrompt(q) }]
       };
       const text = await callClaude(apiKey, explainBody);
@@ -1430,8 +1433,7 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
       loading: true,
     });
     getQaInsertPoint(anchorElement).insertAdjacentElement('afterend', qaBlock);
-    qaBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
+    // scrollIntoView は意図的に呼ばない: iOS/Android でキーボード表示後にスクロールすると選択位置が失われるため
     const historyId = currentHistoryId;
     const anchorIndex = getAnchorBlockIndex(anchorElement);
     const contextText = resultText;
@@ -1464,7 +1466,10 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
       }
     } catch (e) {
       const answerEl = qaBlock.querySelector('.inline-qa-answer');
-      if (answerEl) answerEl.textContent = 'エラー: ' + e.message;
+      if (answerEl) {
+        answerEl.classList.remove('loading');
+        answerEl.textContent = 'エラー: ' + e.message;
+      }
     }
   }
 </script>
