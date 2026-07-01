@@ -347,7 +347,7 @@
       padding: 12px 14px;
       border: 2px solid #e2e8f0;
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 16px;
       font-family: monospace;
       margin-bottom: 12px;
       outline: none;
@@ -503,6 +503,19 @@
 
     #selection-popup.active { display: block; }
 
+    /* モバイルはキーボード表示と競合しないよう画面下固定シートにする */
+    #selection-popup.mobile-sheet {
+      left: 12px !important;
+      right: 12px;
+      top: auto !important;
+      bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+      width: auto;
+      max-width: none;
+      max-height: 60vh;
+      max-height: 60dvh;
+      overflow-y: auto;
+    }
+
     #selection-popup-label {
       font-size: 12px;
       color: #2563eb;
@@ -524,7 +537,7 @@
       padding: 8px 10px;
       border: 1.5px solid #e2e8f0;
       border-radius: 8px;
-      font-size: 13px;
+      font-size: 16px;
       font-family: inherit;
       resize: none;
       outline: none;
@@ -781,6 +794,15 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     }
     document.getElementById('selection-question').addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendInlineQuestion();
+    });
+    // visualViewport 非対応ブラウザ向けフォールバック（追従できない分をscrollIntoViewで補う）
+    document.getElementById('selection-question').addEventListener('focus', () => {
+      if (window.visualViewport) return;
+      const popup = document.getElementById('selection-popup');
+      if (!popup.classList.contains('mobile-sheet')) return;
+      setTimeout(() => {
+        document.getElementById('selection-question').scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 250);
     });
   });
 
@@ -1360,36 +1382,81 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     showSelectionPopup(rect, selectedText);
   }
 
+  function isMobilePopupLayout() {
+    return window.matchMedia('(max-width: 640px)').matches;
+  }
+
   function showSelectionPopup(rect, selectedText) {
     const popup = document.getElementById('selection-popup');
     const label = document.getElementById('selection-popup-label');
     const preview = selectedText.length > 22 ? selectedText.slice(0, 22) + '…' : selectedText;
     label.textContent = '💬 "' + preview + '" について質問';
 
-    const popupWidth = 280;
-    const margin = 8;
-    let left = rect.left;
-    if (left + popupWidth > window.innerWidth - margin) {
-      left = window.innerWidth - popupWidth - margin;
+    if (isMobilePopupLayout()) {
+      // モバイルは選択位置に追従させず画面下固定シートにする
+      // （追従型 position:fixed だとキーボード表示時に visual viewport とズレて画面がスクロールして見えるため）
+      popup.style.left = '';
+      popup.style.top = '';
+      popup.classList.add('mobile-sheet');
+      popup.classList.add('active');
+      updateMobilePopupOffset();
+    } else {
+      popup.classList.remove('mobile-sheet');
+      popup.style.bottom = '';
+
+      const popupWidth = 280;
+      const margin = 8;
+      let left = rect.left;
+      if (left + popupWidth > window.innerWidth - margin) {
+        left = window.innerWidth - popupWidth - margin;
+      }
+      if (left < margin) left = margin;
+      popup.style.left = left + 'px';
+      popup.classList.add('active');
+
+      const popupHeight = popup.offsetHeight || 120;
+      let top = rect.bottom + margin;
+      if (top + popupHeight > window.innerHeight - margin) {
+        top = rect.top - popupHeight - margin;
+      }
+      if (top < margin) top = margin;
+      popup.style.top = top + 'px';
     }
-    if (left < margin) left = margin;
 
-    popup.style.left = left + 'px';
-    popup.classList.add('active');
-
-    const popupHeight = popup.offsetHeight || 120;
-    let top = rect.bottom + margin;
-    if (top + popupHeight > window.innerHeight - margin) {
-      top = rect.top - popupHeight - margin;
-    }
-    if (top < margin) top = margin;
-
-    popup.style.top = top + 'px';
     document.getElementById('selection-question').value = '';
   }
 
+  function updateMobilePopupOffset() {
+    const popup = document.getElementById('selection-popup');
+    if (!popup.classList.contains('active') || !popup.classList.contains('mobile-sheet')) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    // キーボード表示分だけシートを底上げし、常にキーボードの上に表示する
+    const keyboardInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    popup.style.bottom = `calc(${keyboardInset}px + 12px + env(safe-area-inset-bottom, 0px))`;
+  }
+
+  window.visualViewport?.addEventListener('resize', updateMobilePopupOffset);
+  window.visualViewport?.addEventListener('scroll', updateMobilePopupOffset);
+
+  // 表示中にモバイル/デスクトップの表示モードが切り替わったら位置がずれるため一旦閉じる
+  const mobilePopupMediaQuery = window.matchMedia('(max-width: 640px)');
+  const handleMobilePopupMediaChange = () => {
+    const popup = document.getElementById('selection-popup');
+    if (popup.classList.contains('active')) hideSelectionPopup();
+  };
+  if (mobilePopupMediaQuery.addEventListener) {
+    mobilePopupMediaQuery.addEventListener('change', handleMobilePopupMediaChange);
+  } else {
+    mobilePopupMediaQuery.addListener(handleMobilePopupMediaChange);
+  }
+
   function hideSelectionPopup() {
-    document.getElementById('selection-popup').classList.remove('active');
+    const popup = document.getElementById('selection-popup');
+    popup.classList.remove('active', 'mobile-sheet');
+    popup.style.left = '';
+    popup.style.top = '';
+    popup.style.bottom = '';
     pendingSelection = null;
   }
 
