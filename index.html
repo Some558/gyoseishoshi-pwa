@@ -797,7 +797,12 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     });
     // visualViewport 非対応ブラウザ向けフォールバック（追従できない分をscrollIntoViewで補う）
     document.getElementById('selection-question').addEventListener('focus', () => {
-      if (window.visualViewport) return;
+      if (window.visualViewport) {
+        // キーボード表示前でも現時点の viewport で先に補正しておく
+        // （最終的な位置は visualViewport の resize/scroll リスナーが確定させる）
+        updateMobilePopupOffset();
+        return;
+      }
       const popup = document.getElementById('selection-popup');
       if (!popup.classList.contains('mobile-sheet')) return;
       setTimeout(() => {
@@ -1386,6 +1391,30 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     return window.matchMedia('(max-width: 640px)').matches;
   }
 
+  // モバイルシート表示中に iOS Safari が「フォーカスした textarea を画面内に収める」
+  // ネイティブスクロールでページを動かし、選択ハイライトが見失われるのを防ぐため
+  // body を position:fixed 化してスクロールを物理的に止める（iOS モーダルの定番パターン）
+  let lockedScrollY = null;
+
+  function lockBodyScroll() {
+    if (lockedScrollY !== null) return; // 二重ロック防止（元の scrollY を保持）
+    lockedScrollY = window.scrollY;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${lockedScrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+  }
+
+  function unlockBodyScroll() {
+    if (lockedScrollY === null) return;
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    window.scrollTo(0, lockedScrollY);
+    lockedScrollY = null;
+  }
+
   function showSelectionPopup(rect, selectedText) {
     const popup = document.getElementById('selection-popup');
     const label = document.getElementById('selection-popup-label');
@@ -1399,6 +1428,7 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
       popup.style.top = '';
       popup.classList.add('mobile-sheet');
       popup.classList.add('active');
+      lockBodyScroll();
       updateMobilePopupOffset();
     } else {
       popup.classList.remove('mobile-sheet');
@@ -1452,6 +1482,7 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
   }
 
   function hideSelectionPopup() {
+    unlockBodyScroll();
     const popup = document.getElementById('selection-popup');
     popup.classList.remove('active', 'mobile-sheet');
     popup.style.left = '';
@@ -1484,7 +1515,9 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
   async function sendInlineQuestion() {
     if (!pendingSelection) return;
     const apiKey = localStorage.getItem('anthropic_api_key');
-    if (!apiKey) { showModal(); return; }
+    // シートを閉じてスクロールロックを解除してから API キーモーダルを出す
+    // （閉じないと z-index 200 のシートが z-index 100 のモーダルより前面に残る）
+    if (!apiKey) { hideSelectionPopup(); showModal(); return; }
 
     const { text: selectedText, anchorElement } = pendingSelection;
     const question = document.getElementById('selection-question').value.trim();
