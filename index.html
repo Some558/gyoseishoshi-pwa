@@ -1074,8 +1074,9 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
 
     // ── 段階1: 読み取り専用(画像あり・構造化出力) ──
     const readBody = {
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       max_tokens: 3000,
+      thinking: { type: 'disabled' },
       output_config: { format: { type: 'json_schema', schema: READ_SCHEMA } },
       messages: [{
         role: 'user',
@@ -1127,8 +1128,9 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
 
       // ── 段階2: 解説生成専用(画像なし・段階1の確定テキストのみ) ──
       const explainBody = {
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         max_tokens: 4096,
+        thinking: { type: 'disabled' },
         messages: [{ role: 'user', content: buildExplainPrompt(q) }]
       };
       const text = await callClaude(apiKey, explainBody);
@@ -1540,11 +1542,24 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
 
     try {
       const body = {
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5',
         max_tokens: 1024,
+        thinking: { type: 'disabled' },
         messages: [{
           role: 'user',
-          content: `以下は行政書士試験の問題についてのAI解説です。\n\n---\n${contextText}\n---\n\n解説の中の次の部分について質問があります:\n「${selectedText}」\n\n質問: ${displayQuestion}\n\n初学者にわかりやすく、具体的に簡潔に答えてください。`
+          content: [
+            {
+              type: 'text',
+              // 同じ解説に対する追加質問は contextText が同一になるため、
+              // この固定プレフィックスをキャッシュ対象にして再質問時のコストを抑える
+              text: `以下は行政書士試験の問題についてのAI解説です。\n\n---\n${contextText}\n---\n\n`,
+              cache_control: { type: 'ephemeral' }
+            },
+            {
+              type: 'text',
+              text: `解説の中の次の部分について質問があります:\n「${selectedText}」\n\n質問: ${displayQuestion}\n\n初学者にわかりやすく、具体的に簡潔に答えてください。`
+            }
+          ]
         }]
       };
       const answer = await callClaude(apiKey, body);

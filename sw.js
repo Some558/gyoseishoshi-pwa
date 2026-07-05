@@ -1,4 +1,4 @@
-const CACHE = 'gyoseishoshi-v3';
+const CACHE = 'gyoseishoshi-v4';
 const ASSETS = ['./index.html', './manifest.json', './heic2any.min.js'];
 
 self.addEventListener('install', e => {
