@@ -1073,8 +1073,9 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     if (!images.problem || !images.answer) return;
 
     // ── 段階1: 読み取り専用(画像あり・構造化出力) ──
+    // 読み取り=機械的タスクなので Haiku 4.5 でコスト削減(解説の段階2は Sonnet 5 を維持)
     const readBody = {
-      model: 'claude-sonnet-5',
+      model: 'claude-haiku-4-5',
       max_tokens: 3000,
       thinking: { type: 'disabled' },
       output_config: { format: { type: 'json_schema', schema: READ_SCHEMA } },
@@ -1542,7 +1543,8 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
 
     try {
       const body = {
-        model: 'claude-sonnet-5',
+        // 追加質問は文脈が確定済みの短い応答なので Haiku 4.5 で十分(解説本体は Sonnet 5 のまま)
+        model: 'claude-haiku-4-5',
         max_tokens: 1024,
         thinking: { type: 'disabled' },
         messages: [{
