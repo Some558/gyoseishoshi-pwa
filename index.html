@@ -9,6 +9,8 @@
   <meta name="apple-mobile-web-app-title" content="行書AI解説">
   <link rel="manifest" href="manifest.json">
   <script src="heic2any.min.js"></script>
+  <!-- AI の接続先(ローカルゲートウェイ / API)の判定と呼び出し。原本は llm-gateway/client.js -->
+  <script src="client.js"></script>
   <title>行政書士AI解説</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1054,109 +1056,28 @@ ${q.choices.map(c => `${c.label}. ${c.text}`).join('\n')}
     })();
   }
 
-  // ── AI の接続先の決定 ──────────────────────────────────────
-  // 同一 LAN 内(または同じ Mac)で llm-gateway が動いていれば、そちらへ流して
-  // ChatGPT/Codex のサブスク枠を使う(APIキー不要・従量課金なし)。
+  // ── AI の接続先 ────────────────────────────────────────────
+  // 判定と呼び出しは client.js (llm-gateway 同梱) が持つ。
+  // 同一 LAN 内で llm-gateway が動いていれば ChatGPT/Codex のサブスク枠を使い(APIキー不要)、
   // 見つからなければ従来どおり Anthropic API を直接叩く。
-  const GATEWAY_CANDIDATES = [
-    location.origin,          // ゲートウェイ自身がこのページを配信している場合
-    'http://localhost:8787',  // 別オリジンから開いた、Mac 上のブラウザ
-    'http://127.0.0.1:8787'
-  ];
-  const backend = { resolved: false, base: null };
-
-  async function probeGateway(base, timeoutMs = 1500) {
-    if (!base || base === 'null') return false;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const res = await fetch(base + '/healthz', { signal: ctrl.signal, cache: 'no-store' });
-      if (!res.ok) return false;
-      const info = await res.json();
-      return info?.ok === true;
-    } catch (_) {
-      return false;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  // 起動時に1度だけ判定する。以後は結果を使い回す。
-  async function resolveBackend() {
-    if (backend.resolved) return backend.base;
-    for (const base of GATEWAY_CANDIDATES) {
-      if (await probeGateway(base)) { backend.base = base; break; }
-    }
-    backend.resolved = true;
-    updateBackendBadge();
-    return backend.base;
-  }
-
-  function updateBackendBadge() {
+  LLMGateway.onChange((s) => {
     const el = document.getElementById('backend-badge');
     if (!el) return;
-    if (backend.base) {
+    if (s.local) {
       el.textContent = '⚡ ローカル';
-      el.title = `AI はローカルのゲートウェイ経由 (${backend.base})。`
+      el.title = `AI はローカルのゲートウェイ経由 (${s.base})。`
                + 'ChatGPT のサブスク枠を使うので API 課金は発生しません。';
     } else {
       el.textContent = '☁️ API';
       el.title = 'ローカルのゲートウェイが見つからないため、Anthropic API を直接使います(従量課金)。';
     }
-  }
+  });
 
-  // ゲートウェイ経由なら APIキーは要らない
-  function needsApiKey() {
-    return !backend.base && !localStorage.getItem('anthropic_api_key');
-  }
+  const resolveBackend = () => LLMGateway.resolve();
+  const needsApiKey = () => LLMGateway.needsApiKey();
 
-  // Messages API を叩く共通ヘルパー(接続先の違いはここで吸収する)
-  async function callClaude(apiKey, body) {
-    const useGateway = !!backend.base;
-    const url = useGateway
-      ? backend.base + '/v1/messages'
-      : 'https://api.anthropic.com/v1/messages';
-    const headers = useGateway
-      ? { 'Content-Type': 'application/json' }
-      : {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        };
-
-    let response;
-    try {
-      response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-    } catch (e) {
-      if (useGateway) {
-        // 途中でゲートウェイが落ちた/LANから出た場合は、次回の呼び出しで判定をやり直す
-        backend.resolved = false;
-        backend.base = null;
-        updateBackendBadge();
-        throw new Error('ローカルのAI接続が切れました。Mac でゲートウェイが動いているか確認してください。');
-      }
-      throw e;
-    }
-
-    if (!response.ok) {
-      const raw = await response.text();
-      let message = `API エラー (${response.status})`;
-      try {
-        const err = JSON.parse(raw);
-        message = err.error?.message || message;
-      } catch (_) {}
-      throw new Error(message);
-    }
-
-    const data = await response.json();
-    if (data.stop_reason === 'max_tokens') {
-      throw new Error('AIの応答がトークン上限に達しました。もう一度お試しください。');
-    }
-    const text = data.content?.find(b => b.type === 'text')?.text;
-    if (!text) throw new Error('応答を取得できませんでした');
-    return text;
-  }
+  // Messages API を叩く共通ヘルパー(接続先の違いは client.js が吸収する)
+  const callClaude = (apiKey, body) => LLMGateway.callAI(body, { apiKey });
 
   async function analyze() {
     await resolveBackend();

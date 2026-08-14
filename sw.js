@@ -1,5 +1,5 @@
-const CACHE = 'gyoseishoshi-v6';
-const ASSETS = ['./index.html', './manifest.json', './heic2any.min.js'];
+const CACHE = 'gyoseishoshi-v7';
+const ASSETS = ['./index.html', './manifest.json', './heic2any.min.js', './client.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
