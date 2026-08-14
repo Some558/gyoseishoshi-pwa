@@ -1,4 +1,4 @@
-const CACHE = 'gyoseishoshi-v5';
+const CACHE = 'gyoseishoshi-v6';
 const ASSETS = ['./index.html', './manifest.json', './heic2any.min.js'];
 
 self.addEventListener('install', e => {
@@ -16,8 +16,14 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // API呼び出しはキャッシュしない
-  if (e.request.url.includes('generativelanguage.googleapis.com')) return;
+  // AIへの問い合わせ系はキャッシュを一切通さない(素通りさせてブラウザ既定の動作にする)
+  if (e.request.method !== 'GET') return;
+
+  const url = new URL(e.request.url);
+  if (url.hostname === 'api.anthropic.com') return;
+  // ローカルゲートウェイの疎通確認と API パス
+  if (url.pathname === '/healthz' || url.pathname.startsWith('/v1/')) return;
+
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request))
   );
